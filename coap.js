@@ -12,7 +12,9 @@ var coapMessageType = {
 }
 var coapCode = {
   "CONTENT" : 69,
-  "NOTFOUND" : 132
+  "NOTFOUND" : 132,
+  "BADREQ" : 128,
+  "CHANGED" : 68
 }
 var coapMethod = {
   "GET" : 1,
@@ -21,21 +23,20 @@ var coapMethod = {
   "DELETE" : 4
 }
 var coapOptionType = {
-  "CONTENT_TYPE" : 1,
-  "MAX_AGE" : 2,
-  "PROXY_URI" : 3,
+  "IF_MATCH" : 1,
+  "URI_HOST" : 3,
   "ETAG" : 4,
-  "URI_HOST" : 5,
-  "LOCATION_PATH" : 6,
+  "IF_NONE_MATCH" : 5,
   "URI_PORT" : 7,
-  "LOCATION_QUERY" : 8,
-  "URI_PATH" : 9,
-  "OBSERVE" : 10,
-  "TOKEN" : 11,
-  "ACCEPT" : 12,
-  "IF_MATCH" : 13,
+  "LOCATION_PATH" : 8,
+  "URI_PATH" : 11,
+  "CONTENT_FORMAT" : 12,
+  "MAX_AGE" : 14,
   "URI_QUERY" : 15,
-  "IF_NONE_MATCH" : 21
+  "ACCEPT" : 17,
+  "LOCATION_QUERY" : 20,
+  "PROXY_URI" : 35,
+  "PROXY_SCHEME" : 39,
 }
 /// Coap message and option objects
 function CoapMessage(){
@@ -131,12 +132,12 @@ function serialize(coapMessage,coapHost){
     var delta = options[i].option - prevOption;
     buffer[index] = delta << 4;
 
-    if (options[i].length < 15){
+    if (options[i].length < 13){
       buffer[index] |= options[i].length;
       index ++;
     } else {
-      buffer[index] |= 15;
-      buffer[index + 1] = options[i].length - 15;
+      buffer[index] |= 13;
+      buffer[index + 1] = options[i].length - 13;
       index += 2;
     }
 
