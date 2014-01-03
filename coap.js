@@ -42,7 +42,7 @@ var coapOptionType = {
 function CoapMessage(){
   this.version = 1;
   this.type = 0;
-  this.optionCount = 0;
+  this.tkl = 0;
   this.code = 0;
   this.id = 0;
   this.options = [];
@@ -56,60 +56,93 @@ function CoapOption(){
 }
 
 /// Packet masks
-var versionMask = parseInt('11000000',2);
-var typeMask = parseInt('00110000',2);
-var optionCountMask = parseInt('00001111',2);
+var versionMask = parseInt('11000000',2),
+    versionShift = 6;
+var typeMask = parseInt('00110000',2),
+    typeShift = 4;
+var tklMask = parseInt('00001111',2),
+    tklShift = 0;
 var optionDeltaMask = parseInt('11110000',2);
 var optionShortLength = parseInt('00001111',2);
 
 /// Deserialize a buffer to CoAP message object
 function deserialize(buffer){
   var coapResponse = new CoapMessage();// the CoAP object to be filled
-  coapResponse.version = (buffer[0] & versionMask) >> 6;
-  coapResponse.type = (buffer[0] & typeMask) >> 4;
-  coapResponse.optionCount = (buffer[0] & optionCountMask);
+  coapResponse.version = (buffer[0] & versionMask) >> versionShift;
+  coapResponse.type = (buffer[0] & typeMask) >> typeShift;
+  coapResponse.tkl = (buffer[0] & tklMask);
   coapResponse.code = buffer[1];
-  coapResponse.id = buffer[2] * 256 + buffer[3];
+  coapResponse.id = buffer[2] << 8 + buffer[3];
 
   /// Retreiving the options from buffer to CoAP object
   var index = 4;
   var i = 0;
   var prevOption = 0;
-  for (i = 0; i < coapResponse.optionCount; i++){
-    var aResponseOption = new CoapOption(); // an Option to be filled
-    aResponseOption.option = ((buffer[index] & optionDeltaMask) >> 4) + prevOption;
-    var shortLength = buffer[index] & optionShortLength;
-    var longLength = 0;
-    index ++;
-    if (shortLength == 15){
-      longLength = buffer[index];
-      index ++;
-    }
+  var token = 0;
+  for (i = 0; i < coapResponse.tkl; i++)
+    token = token << 8 + buffer[index];
 
-    aResponseOption.length = shortLength + longLength;
-    var optionValueBuffer = new Uint8Array(aResponseOption.length);
-    var j = 0;
-    for (j = 0; j < aResponseOption.length;j++){
-      optionValueBuffer[j] = buffer[index];
-      index ++;
-    }
-    aResponseOption.value = optionValueBuffer;
+  while (index < buffer.length) {
+    // Test for payload
+    if (buffer[index] == 0xFF) {
+      index++;
+      // If payload is present, it's length must be greater than zero
+      var payloadLength = buffer.length - index;
+      if (!payloadLength)
+        throw "Illegal zero-length payload received";
+      // Copy the payload into a buffer
+      var payloadBuffer = new Uint8Array(payloadLength);
+      coapResponse.payload = "";
+      for (var k = 0; k < payloadLength; k++){
+        payloadBuffer[k] = buffer[index];
+        coapResponse.payload += String.fromCharCode(buffer[index]);
+        index ++;
+      }
+//      coapResponse.payload = payloadBuffer;
+    } else {
+      // Handle an option
 
-    prevOption = aResponseOption.option;
+      var aResponseOption = new CoapOption(); // an Option to be filled
+      // Option number is given as a delta relative to the previous value
+      aResponseOption.option = ((buffer[index] & optionDeltaMask) >> 4) + prevOption;
+      var shortLength = buffer[index] & optionShortLength;
+      var longLength = 0;
+      index ++;
+
+      // Deal with delta values > 13
+      if (aResponseOption.option == 15) {
+        throw "Invalid option number";
+      } else if (aResponseOption.option == 14) {
+        aResponseOption.option += buffer[index] << 8 + buffer[index] + 255;
+        index += 2;
+      } else if (aResponseOption.option == 13) {
+        aResponseOption.option += buffer[index];
+        index++;
+      }
+
+      // Deal with lengths values > 13
+      if (shortLength == 15) {
+        throw "Invalid option number";
+      } else if (shortLength == 14) {
+        shortLength.option += buffer[index] << 8 + buffer[index] + 255;
+        index += 2;
+      } else if (shortLength == 13) {
+        shortLength.option += buffer[index];
+        index++;
+      }
+
+      aResponseOption.length = shortLength;
+      var optionValueBuffer = new Uint8Array(aResponseOption.length);
+      for (var j = 0; j < aResponseOption.length;j++){
+        optionValueBuffer[j] = buffer[index];
+        index ++;
+      }
+      aResponseOption.value = optionValueBuffer;
+
+      prevOption = aResponseOption.option;
+      coapResponse.options.push(aResponseOption)
+    }
   }
-
-  /// Check if there is payload
-  if (index < buffer.length){
-    var payloadLength = buffer.length - index;
-    var payloadBuffer = new Uint8Array(payloadLength);
-    var k = 0;
-    for (k = 0; k < payloadLength; k++){
-      payloadBuffer[k] = buffer[index];
-      index ++;
-    }
-    coapResponse.payload = payloadBuffer;
-  }
-
   return coapResponse;
 }
 
@@ -119,7 +152,7 @@ function serialize(coapMessage,coapHost){
   var buffer = new Uint8Array(100);// Buffer to hold the CoAP packet (wihout wscoap header)
   buffer[0] = coapMessage.version << 6;
   buffer[0] |= coapMessage.type << 4;
-  buffer[0] |= coapMessage.optionCount;
+  buffer[0] |= coapMessage.tkl;
   buffer[1] = coapMessage.code;
   buffer[2] = coapMessage.id/256;
   buffer[3] = coapMessage.id%256;
