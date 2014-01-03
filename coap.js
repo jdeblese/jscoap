@@ -124,10 +124,10 @@ function deserialize(buffer){
       if (shortLength == 15) {
         throw "Invalid option number";
       } else if (shortLength == 14) {
-        shortLength.option += buffer[index] << 8 + buffer[index] + 255;
+        shortLength += buffer[index] << 8 + buffer[index] + 255;
         index += 2;
       } else if (shortLength == 13) {
-        shortLength.option += buffer[index];
+        shortLength += buffer[index];
         index++;
       }
 
