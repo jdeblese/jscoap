@@ -63,7 +63,7 @@ var typeMask = parseInt('00110000',2),
 var tklMask = parseInt('00001111',2),
     tklShift = 0;
 var optionDeltaMask = parseInt('11110000',2);
-var optionShortLength = parseInt('00001111',2);
+var optionLengthMask = parseInt('00001111',2);
 
 /// Deserialize a buffer to CoAP message object
 function deserialize(buffer){
@@ -103,41 +103,38 @@ function deserialize(buffer){
       // Handle an option
 
       var aResponseOption = new CoapOption(); // an Option to be filled
-      // Option number is given as a delta relative to the previous value
-      aResponseOption.option = ((buffer[index] & optionDeltaMask) >> 4) + prevOption;
-      var shortLength = buffer[index] & optionShortLength;
-      var longLength = 0;
-      index ++;
 
-      // Deal with delta values > 13
-      if (aResponseOption.option == 15) {
-        throw "Invalid option number";
-      } else if (aResponseOption.option == 14) {
-        aResponseOption.option += buffer[index] << 8 + buffer[index] + 255;
-        index += 2;
-      } else if (aResponseOption.option == 13) {
-        aResponseOption.option += buffer[index];
-        index++;
-      }
+      var delta = ((buffer[index] & optionDeltaMask)>>4);
+      var len = buffer[index] & optionLengthMask;
+      index++;
 
-      // Deal with lengths values > 13
-      if (shortLength == 15) {
-        throw "Invalid option number";
-      } else if (shortLength == 14) {
-        shortLength += buffer[index] << 8 + buffer[index] + 255;
-        index += 2;
-      } else if (shortLength == 13) {
-        shortLength += buffer[index];
-        index++;
-      }
+      var _helper = function(val) {
+        if (val == 15) {
+          throw "Invalid value for option parameter";
+        } else if (val == 14) {
+          val += buffer[index] << 8 + buffer[index] + 255;
+          index += 2;
+        } else if (val == 13) {
+          val += buffer[index];
+          index++;
+        }
+        return val;
+      };
 
-      aResponseOption.length = shortLength;
-      var optionValueBuffer = new Uint8Array(aResponseOption.length);
-      for (var j = 0; j < aResponseOption.length;j++){
-        optionValueBuffer[j] = buffer[index];
-        index ++;
+      // Delta comes first in header, then length
+      aResponseOption.option = _helper(delta) + prevOption // NOTE! Delta is passed to _helper, not delta + prev
+      aResponseOption.length = _helper(len)
+
+      if (!aResponseOption.length)
+        aResponseOption.value = 0;
+      else {
+        var optionValueBuffer = new Uint8Array(aResponseOption.length);
+        for (var j = 0; j < aResponseOption.length;j++){
+          optionValueBuffer[j] = buffer[index];
+          index ++;
+        }
+        aResponseOption.value = optionValueBuffer;
       }
-      aResponseOption.value = optionValueBuffer;
 
       prevOption = aResponseOption.option;
       coapResponse.options.push(aResponseOption)
