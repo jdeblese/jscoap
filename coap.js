@@ -37,7 +37,19 @@ var coapOptionType = {
   "LOCATION_QUERY" : 20,
   "PROXY_URI" : 35,
   "PROXY_SCHEME" : 39,
+  "SIZE1" : 60
 }
+
+// Content formats, taken from coap-draft-18, section 12.3, table 9
+var coapContentFormats = {
+  0  : "text/plain;charset=utf-8",
+  40 : "application/link-format",
+  41 : "application/xml",
+  42 : "application/octet-stream",
+  47 : "application/exi",
+  50 : "application/json"
+};
+
 /// Coap message and option objects
 function CoapMessage(){
   this.version = 1;
@@ -147,14 +159,21 @@ function deserialize(buffer){
 function serialize(coapMessage,coapHost){
   var index = 0;
   var buffer = new Uint8Array(100);// Buffer to hold the CoAP packet (wihout wscoap header)
-  buffer[0] = coapMessage.version << 6;
-  buffer[0] |= coapMessage.type << 4;
-  buffer[0] |= coapMessage.tkl;
+  buffer[0] = (coapMessage.version & 0x03) << 6;
+  buffer[0] |= (coapMessage.type & 0x03) << 4;
+  buffer[0] |= coapMessage.tkl & 0x0F;
   buffer[1] = coapMessage.code;
   buffer[2] = coapMessage.id/256;
   buffer[3] = coapMessage.id%256;
 
   index += 4;
+
+  var token = new Uint8Array(coapMessage.token);
+  for (idx in token) {
+    buffer[index] = token[idx];
+    index++;
+  }
+
   var options = coapMessage.options;
   var i = 0;
   var prevOption = 0;
